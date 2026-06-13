@@ -5,17 +5,18 @@ from codex_costs_common import (
     add_session_usage,
     build_session_row,
     collect_entries,
-    get_model_key,
     group_entries_by_snapshot,
     parse_args,
     print_summary,
     resolve_target_date,
     zero_usage,
 )
+from openrouter_pricing import resolve_catalog
 
 
 def aggregate_snapshot_max(entries):
     session_rows = defaultdict(build_session_row)
+    snapshot = resolve_catalog()
 
     leaf_totals = {}
     for entry in entries:
@@ -41,7 +42,8 @@ def aggregate_snapshot_max(entries):
         add_session_usage(
             session_rows[leaf_total["session_id"]],
             leaf_total["usage"],
-            get_model_key(leaf_total["model"]),
+            leaf_total["model"],
+            snapshot=snapshot,
         )
 
     return session_rows

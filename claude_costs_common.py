@@ -6,37 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
-PRICING = {
-    "sonnet": {"in": 3.0, "out": 15.0, "c_write_5m": 3.75, "c_write_1h": 6.0, "c_read": 0.30},
-    "opus": {"in": 5.0, "out": 25.0, "c_write_5m": 6.25, "c_write_1h": 10.0, "c_read": 0.50},
-    "opus_legacy": {"in": 15.0, "out": 75.0, "c_write_5m": 18.75, "c_write_1h": 30.0, "c_read": 1.50},
-    "haiku": {"in": 1.0, "out": 5.0, "c_write_5m": 1.25, "c_write_1h": 2.0, "c_read": 0.10},
-    "haiku_legacy": {"in": 0.8, "out": 4.0, "c_write_5m": 1.0, "c_write_1h": 1.6, "c_read": 0.08},
-    "fable": {"in": 10.0, "out": 50.0, "c_write_5m": 12.5, "c_write_1h": 20.0, "c_read": 1.0},
-    "mythos": {"in": 10.0, "out": 50.0, "c_write_5m": 12.5, "c_write_1h": 20.0, "c_read": 1.0},
-}
-
-MODEL_MAPPING = [
-    ("claude-mythos-5", "mythos"),
-    ("claude-fable-5", "fable"),
-    ("claude-opus-4-8", "opus"),
-    ("claude-opus-4-7", "opus"),
-    ("claude-opus-4-6", "opus"),
-    ("claude-opus-4-5", "opus"),
-    ("claude-opus-4-1", "opus_legacy"),
-    ("claude-opus-4", "opus_legacy"),
-    ("claude-sonnet-4-6", "sonnet"),
-    ("claude-sonnet-4-5", "sonnet"),
-    ("claude-sonnet-4", "sonnet"),
-    ("claude-3-5-sonnet", "sonnet"),
-    ("claude-haiku-4-5", "haiku"),
-    ("claude-3-5-haiku", "haiku_legacy"),
-    ("mythos", "mythos"),
-    ("fable", "fable"),
-    ("opus", "opus"),
-    ("sonnet", "sonnet"),
-    ("haiku", "haiku"),
-]
+from openrouter_pricing import calculate_estimated_cost, match_openrouter_model
 
 
 def parse_args(default_strategy_name):
@@ -66,14 +36,11 @@ def zero_usage():
     return {"in": 0, "out": 0, "c_read": 0, "c_write_5m": 0, "c_write_1h": 0}
 
 
-def get_model_key(model_name):
-    if not model_name:
-        return "sonnet"
-    lowered = model_name.lower()
-    for needle, model_key in MODEL_MAPPING:
-        if needle in lowered:
-            return model_key
-    return "sonnet"
+def get_model_label(model_name, snapshot=None):
+    entry = match_openrouter_model(model_name, snapshot=snapshot)
+    if not entry:
+        return model_name or "unknown"
+    return entry.get("display_name") or entry.get("canonical_slug") or entry["id"]
 
 
 def get_display_names():
@@ -209,29 +176,30 @@ def collect_entries(target_date, session_ids=None, target_dates=None):
     return entries, sid_display_names
 
 
-def calculate_cost(usage, model_key):
-    rates = PRICING[model_key]
-    return (
-        usage["in"] * rates["in"]
-        + usage["out"] * rates["out"]
-        + usage["c_read"] * rates["c_read"]
-        + usage["c_write_5m"] * rates["c_write_5m"]
-        + usage["c_write_1h"] * rates["c_write_1h"]
-    ) / 1_000_000
+def calculate_cost(usage, model_name, snapshot=None):
+    _entry, cost = calculate_estimated_cost(
+        model_name,
+        input_tokens=usage["in"],
+        output_tokens=usage["out"],
+        cache_read_tokens=usage["c_read"],
+        cache_write_tokens=usage["c_write_5m"] + usage["c_write_1h"],
+        snapshot=snapshot,
+    )
+    return cost or 0.0
 
 
 def build_session_row():
-    return {"in": 0, "out": 0, "c_read": 0, "c_write_5m": 0, "c_write_1h": 0, "cost": 0.0, "model": "sonnet"}
+    return {"in": 0, "out": 0, "c_read": 0, "c_write_5m": 0, "c_write_1h": 0, "cost": 0.0, "model": "unknown"}
 
 
-def add_session_usage(row, usage, model_key):
+def add_session_usage(row, usage, model_name, snapshot=None):
     row["in"] += usage["in"]
     row["out"] += usage["out"]
     row["c_read"] += usage["c_read"]
     row["c_write_5m"] += usage["c_write_5m"]
     row["c_write_1h"] += usage["c_write_1h"]
-    row["cost"] += calculate_cost(usage, model_key)
-    row["model"] = model_key
+    row["cost"] += calculate_cost(usage, model_name, snapshot=snapshot)
+    row["model"] = get_model_label(model_name, snapshot=snapshot)
 
 
 def print_summary(strategy_name, target_date, session_rows, sid_display_names):

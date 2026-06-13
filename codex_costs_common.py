@@ -6,27 +6,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-PRICING = {
-    "gpt-5.5": {"in": 5.0, "out": 30.0, "c_read": 0.5},
-    "gpt-5.4": {"in": 2.5, "out": 15.0, "c_read": 0.25},
-    "gpt-5.4-mini": {"in": 0.75, "out": 4.5, "c_read": 0.075},
-    "gpt-5-codex": {"in": 1.25, "out": 10.0, "c_read": 0.125},
-    "gpt-5-mini": {"in": 0.25, "out": 2.0, "c_read": 0.025},
-    "gpt-5-nano": {"in": 0.05, "out": 0.4, "c_read": 0.005},
-    "codex-mini": {"in": 0.75, "out": 3.0, "c_read": 0.025},
-}
+from openrouter_pricing import calculate_estimated_cost, match_openrouter_model
 
-MODEL_MAPPING = [
-    ("gpt-5.5", "gpt-5.5"),
-    ("gpt-5.4-mini", "gpt-5.4-mini"),
-    ("gpt-5.4", "gpt-5.4"),
-    ("gpt-5-codex", "gpt-5-codex"),
-    ("codex-mini", "codex-mini"),
-    ("gpt-5-mini", "gpt-5-mini"),
-    ("gpt-5-nano", "gpt-5-nano"),
-]
-
-DEFAULT_MODEL_KEY = "gpt-5.4"
 CODEX_HISTORY_PATH = Path("~/.codex/history.jsonl").expanduser()
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
 
@@ -177,14 +158,11 @@ def get_display_names():
     return names
 
 
-def get_model_key(model_name):
-    if not model_name:
-        return DEFAULT_MODEL_KEY
-    lowered = model_name.lower()
-    for needle, model_key in MODEL_MAPPING:
-        if needle in lowered:
-            return model_key
-    return DEFAULT_MODEL_KEY
+def get_model_label(model_name, snapshot=None):
+    entry = match_openrouter_model(model_name, snapshot=snapshot)
+    if not entry:
+        return model_name or "unknown"
+    return entry.get("display_name") or entry.get("canonical_slug") or entry["id"]
 
 
 def token_usage_from_payload(payload):
@@ -417,22 +395,23 @@ def collect_entries(target_date, allowed_root_session_ids=None, target_dates=Non
     return entries, display_names
 
 
-def add_session_usage(session_row, usage, model_key):
+def add_session_usage(session_row, usage, model_name, snapshot=None):
     session_row["usage"]["in"] += usage["in"]
     session_row["usage"]["out"] += usage["out"]
     session_row["usage"]["c_read"] += usage["c_read"]
     session_row["usage"]["reasoning"] += usage["reasoning"]
 
-    rates = PRICING[model_key]
-    cost = (
-        usage["in"] * rates["in"]
-        + usage["out"] * rates["out"]
-        + usage["c_read"] * rates["c_read"]
-    ) / 1_000_000
+    _entry, cost = calculate_estimated_cost(
+        model_name,
+        input_tokens=usage["in"],
+        output_tokens=usage["out"],
+        cache_read_tokens=usage["c_read"],
+        snapshot=snapshot,
+    )
 
-    session_row["cost"] += cost
+    session_row["cost"] += cost or 0.0
 
-    model_usage = session_row["models"][model_key]
+    model_usage = session_row["models"][get_model_label(model_name, snapshot=snapshot)]
     model_usage["in"] += usage["in"]
     model_usage["out"] += usage["out"]
     model_usage["c_read"] += usage["c_read"]

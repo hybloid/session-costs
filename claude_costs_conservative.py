@@ -5,17 +5,18 @@ from claude_costs_common import (
     add_session_usage,
     build_session_row,
     collect_entries,
-    get_model_key,
     group_entries_by_message,
     parse_args,
     print_summary,
     resolve_target_date,
     zero_usage,
 )
+from openrouter_pricing import resolve_catalog
 
 
 def aggregate_message_max(entries):
     session_rows = defaultdict(build_session_row)
+    snapshot = resolve_catalog()
 
     for (sid, _mid), message_entries in group_entries_by_message(entries).items():
         message_usage = zero_usage()
@@ -31,7 +32,7 @@ def aggregate_message_max(entries):
             if entry["model"]:
                 last_model = entry["model"]
 
-        add_session_usage(session_rows[sid], message_usage, get_model_key(last_model))
+        add_session_usage(session_rows[sid], message_usage, last_model, snapshot=snapshot)
 
     return session_rows
 
