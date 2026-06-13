@@ -182,7 +182,8 @@ def calculate_cost(usage, model_name, snapshot=None):
         input_tokens=usage["in"],
         output_tokens=usage["out"],
         cache_read_tokens=usage["c_read"],
-        cache_write_tokens=usage["c_write_5m"] + usage["c_write_1h"],
+        cache_write_5m_tokens=usage["c_write_5m"],
+        cache_write_1h_tokens=usage["c_write_1h"],
         snapshot=snapshot,
     )
     return cost or 0.0

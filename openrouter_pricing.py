@@ -1,16 +1,95 @@
 #!/usr/bin/env python3
-import json
-import time
-import urllib.request
 from decimal import Decimal
-from pathlib import Path
-
-MODELS_URL = "https://openrouter.ai/api/v1/models"
-CACHE_PATH = Path("~/.cache/session-costs/openrouter-price-snapshot.json").expanduser()
-CACHE_TTL_SECONDS = 12 * 60 * 60
-REQUEST_TIMEOUT_SECONDS = 10
 
 _CATALOG_CACHE = None
+
+API_ENTRY_IDS = {
+    "anthropic/claude-opus-4.8",
+    "anthropic/claude-opus-4.7",
+    "anthropic/claude-opus-4.6",
+    "anthropic/claude-opus-4.5",
+    "anthropic/claude-opus-4.1",
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-sonnet-4.5",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "openai/gpt-5-codex",
+    "openai/gpt-5-mini",
+    "openai/gpt-5-nano",
+    "openai/gpt-5.1-codex-mini",
+}
+
+API_PRICING_OVERRIDES = {
+    "anthropic/claude-opus-4.8": {
+        "cache_write_5m_token_price_usd": "0.00000625",
+        "cache_write_1h_token_price_usd": "0.00001",
+    },
+    "anthropic/claude-opus-4.7": {
+        "cache_write_5m_token_price_usd": "0.00000625",
+        "cache_write_1h_token_price_usd": "0.00001",
+    },
+    "anthropic/claude-opus-4.6": {
+        "cache_write_5m_token_price_usd": "0.00000625",
+        "cache_write_1h_token_price_usd": "0.00001",
+    },
+    "anthropic/claude-opus-4.5": {
+        "cache_write_5m_token_price_usd": "0.00000625",
+        "cache_write_1h_token_price_usd": "0.00001",
+    },
+    "anthropic/claude-opus-4.1": {
+        "cache_write_5m_token_price_usd": "0.00001875",
+        "cache_write_1h_token_price_usd": "0.00003",
+    },
+    "anthropic/claude-sonnet-4.6": {
+        "cache_write_5m_token_price_usd": "0.00000375",
+        "cache_write_1h_token_price_usd": "0.000006",
+    },
+    "anthropic/claude-sonnet-4.5": {
+        "cache_write_5m_token_price_usd": "0.00000375",
+        "cache_write_1h_token_price_usd": "0.000006",
+    },
+    "anthropic/claude-sonnet-4": {
+        "cache_write_5m_token_price_usd": "0.00000375",
+        "cache_write_1h_token_price_usd": "0.000006",
+    },
+    "anthropic/claude-haiku-4.5": {
+        "cache_write_5m_token_price_usd": "0.00000125",
+        "cache_write_1h_token_price_usd": "0.000002",
+    },
+    "openai/gpt-5.5": {
+        "prompt_token_price_usd": "0.000005",
+        "completion_token_price_usd": "0.00003",
+        "cache_read_token_price_usd": "0.0000005",
+    },
+    "openai/gpt-5.4": {
+        "prompt_token_price_usd": "0.0000025",
+        "completion_token_price_usd": "0.000015",
+        "cache_read_token_price_usd": "0.00000025",
+    },
+    "openai/gpt-5.4-mini": {
+        "prompt_token_price_usd": "0.00000075",
+        "completion_token_price_usd": "0.0000045",
+        "cache_read_token_price_usd": "0.000000075",
+    },
+    "openai/gpt-5-codex": {
+        "prompt_token_price_usd": "0.00000125",
+        "completion_token_price_usd": "0.00001",
+        "cache_read_token_price_usd": "0.000000125",
+    },
+    "openai/gpt-5-mini": {
+        "prompt_token_price_usd": "0.00000025",
+        "completion_token_price_usd": "0.000002",
+        "cache_read_token_price_usd": "0.000000025",
+    },
+    "openai/gpt-5-nano": {
+        "prompt_token_price_usd": "0.00000005",
+        "completion_token_price_usd": "0.0000004",
+        "cache_read_token_price_usd": "0.000000005",
+    },
+}
 
 FALLBACK_SNAPSHOT = {
     "fetched_at": 0,
@@ -245,7 +324,7 @@ def create_entry(entry):
     normalized_names.update(build_normalized_model_names(id_value))
     normalized_names.update(build_normalized_model_names(canonical_slug))
     normalized_names.update(build_normalized_model_names(display_name))
-    return {
+    created = {
         "id": id_value,
         "canonical_slug": canonical_slug,
         "display_name": display_name,
@@ -254,103 +333,45 @@ def create_entry(entry):
         "completion_token_price_usd": entry.get("completion_token_price_usd"),
         "cache_read_token_price_usd": entry.get("cache_read_token_price_usd"),
         "cache_write_token_price_usd": entry.get("cache_write_token_price_usd"),
+        "cache_write_5m_token_price_usd": entry.get("cache_write_5m_token_price_usd"),
+        "cache_write_1h_token_price_usd": entry.get("cache_write_1h_token_price_usd"),
+        "context_long_threshold_tokens": entry.get("context_long_threshold_tokens"),
+        "context_long_multiplier": entry.get("context_long_multiplier"),
+        "pricing_source": entry.get("pricing_source"),
     }
+    return apply_pricing_override(created)
 
 
-def parse_snapshot(payload, fetched_at=None):
+def apply_pricing_override(entry):
+    override = API_PRICING_OVERRIDES.get(entry["id"])
+    merged = dict(entry)
+    if override:
+        merged.update(override)
+
+    normalized_names = set(entry.get("normalized_names") or set())
+    normalized_names.update(build_normalized_model_names(merged.get("canonical_slug")))
+    normalized_names.update(build_normalized_model_names(merged.get("display_name")))
+    normalized_names.update(build_normalized_model_names(merged["id"]))
+    merged["normalized_names"] = normalized_names
+    if not merged.get("pricing_source"):
+        merged["pricing_source"] = "credits_api" if merged["id"] in API_ENTRY_IDS else "legacy_static"
+    return merged
+
+
+def static_catalog_snapshot():
     entries = []
-    for item in payload.get("data", []):
-        pricing = item.get("pricing") or {}
-        entry = create_entry(
-            {
-                "id": item.get("id"),
-                "canonical_slug": item.get("canonical_slug"),
-                "display_name": item.get("name"),
-                "prompt_token_price_usd": pricing.get("prompt"),
-                "completion_token_price_usd": pricing.get("completion"),
-                "cache_read_token_price_usd": pricing.get("input_cache_read"),
-                "cache_write_token_price_usd": pricing.get("input_cache_write"),
-            }
-        )
-        if entry:
-            entries.append(entry)
-    return {"fetched_at": int(fetched_at or time.time()), "entries": entries}
-
-
-def fallback_snapshot():
-    return {"fetched_at": 0, "entries": [create_entry(entry) for entry in FALLBACK_SNAPSHOT["entries"] if create_entry(entry)]}
-
-
-def load_cached_snapshot(cache_path=CACHE_PATH):
-    if not cache_path.exists():
-        return None
-    try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    entries = []
-    for entry in payload.get("entries", []):
+    for entry in FALLBACK_SNAPSHOT["entries"]:
         created = create_entry(entry)
         if created:
             entries.append(created)
-    if not entries:
-        return None
-    return {"fetched_at": int(payload.get("fetched_at") or 0), "entries": entries}
+    return {"fetched_at": 0, "entries": entries}
 
 
-def save_snapshot(snapshot, cache_path=CACHE_PATH):
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "fetched_at": snapshot.get("fetched_at") or int(time.time()),
-            "entries": [
-                {
-                    "id": entry["id"],
-                    "canonical_slug": entry.get("canonical_slug"),
-                    "display_name": entry.get("display_name"),
-                    "prompt_token_price_usd": entry.get("prompt_token_price_usd"),
-                    "completion_token_price_usd": entry.get("completion_token_price_usd"),
-                    "cache_read_token_price_usd": entry.get("cache_read_token_price_usd"),
-                    "cache_write_token_price_usd": entry.get("cache_write_token_price_usd"),
-                }
-                for entry in snapshot.get("entries", [])
-            ],
-        }
-        cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        return
-
-
-def fetch_snapshot(url=MODELS_URL, timeout=REQUEST_TIMEOUT_SECONDS):
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.load(response)
-    return parse_snapshot(payload)
-
-
-def resolve_catalog(force_refresh=False, now=None, cache_path=CACHE_PATH):
+def resolve_catalog(force_refresh=False, now=None, cache_path=None):
     global _CATALOG_CACHE
-    if not force_refresh and _CATALOG_CACHE is not None:
-        return _CATALOG_CACHE
-
-    now = now or time.time()
-    cached = load_cached_snapshot(cache_path)
-    if not force_refresh and cached and now - cached.get("fetched_at", 0) < CACHE_TTL_SECONDS:
-        _CATALOG_CACHE = cached
-        return cached
-
-    try:
-        fresh = fetch_snapshot()
-        save_snapshot(fresh, cache_path)
-        _CATALOG_CACHE = fresh
-        return fresh
-    except Exception:
-        if cached:
-            _CATALOG_CACHE = cached
-            return cached
-        _CATALOG_CACHE = fallback_snapshot()
-        return _CATALOG_CACHE
+    if force_refresh or _CATALOG_CACHE is None:
+        _CATALOG_CACHE = static_catalog_snapshot()
+    return _CATALOG_CACHE
 
 
 def match_openrouter_model(model_id, snapshot=None):
@@ -389,17 +410,72 @@ def cost_contribution(tokens, price_per_token_usd):
     return Decimal(str(price_per_token_usd)) * Decimal(tokens)
 
 
-def calculate_estimated_cost(model_id, input_tokens=0, output_tokens=0, cache_read_tokens=0, cache_write_tokens=0, snapshot=None):
+def adjusted_context_price(entry, price_key, tokens, fallback_key=None):
+    price = entry.get(price_key)
+    if price is None and fallback_key:
+        price = entry.get(fallback_key)
+    if price is None:
+        return None
+
+    adjusted = Decimal(str(price))
+    threshold = entry.get("context_long_threshold_tokens")
+    multiplier = entry.get("context_long_multiplier")
+    if threshold and multiplier and tokens and tokens > int(threshold):
+        adjusted *= Decimal(str(multiplier))
+    return adjusted
+
+
+def calculate_estimated_cost(
+    model_id,
+    input_tokens=0,
+    output_tokens=0,
+    cache_read_tokens=0,
+    cache_write_tokens=0,
+    cache_write_5m_tokens=0,
+    cache_write_1h_tokens=0,
+    snapshot=None,
+):
     entry = match_openrouter_model(model_id, snapshot=snapshot)
     if not entry:
         return None, None
 
     parts = [
-        cost_contribution(input_tokens, entry.get("prompt_token_price_usd")),
+        cost_contribution(input_tokens, adjusted_context_price(entry, "prompt_token_price_usd", input_tokens)),
         cost_contribution(output_tokens, entry.get("completion_token_price_usd")),
-        cost_contribution(cache_read_tokens, entry.get("cache_read_token_price_usd")),
-        cost_contribution(cache_write_tokens, entry.get("cache_write_token_price_usd")),
+        cost_contribution(cache_read_tokens, adjusted_context_price(entry, "cache_read_token_price_usd", cache_read_tokens)),
     ]
+
+    if cache_write_5m_tokens or cache_write_1h_tokens:
+        parts.extend(
+            [
+                cost_contribution(
+                    cache_write_5m_tokens,
+                    adjusted_context_price(
+                        entry,
+                        "cache_write_5m_token_price_usd",
+                        cache_write_5m_tokens,
+                        fallback_key="cache_write_token_price_usd",
+                    ),
+                ),
+                cost_contribution(
+                    cache_write_1h_tokens,
+                    adjusted_context_price(
+                        entry,
+                        "cache_write_1h_token_price_usd",
+                        cache_write_1h_tokens,
+                        fallback_key="cache_write_token_price_usd",
+                    ),
+                ),
+            ]
+        )
+    else:
+        parts.append(
+            cost_contribution(
+                cache_write_tokens,
+                adjusted_context_price(entry, "cache_write_token_price_usd", cache_write_tokens),
+            )
+        )
+
     if any(part is None for part in parts):
         return entry, None
     total = sum(parts, Decimal("0"))
