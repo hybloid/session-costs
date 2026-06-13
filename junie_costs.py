@@ -3,12 +3,14 @@ import argparse
 import json
 import sys
 from collections import Counter, defaultdict
+from decimal import Decimal
 from datetime import date, datetime
 from pathlib import Path
 
 JUNIE_HOME = Path("~/.junie").expanduser()
 JUNIE_SESSIONS_ROOT = JUNIE_HOME / "sessions"
 JUNIE_INDEX_PATH = JUNIE_SESSIONS_ROOT / "index.jsonl"
+JUNIE_COST_QUANTUM = Decimal("0.0000000001")
 
 
 def parse_args():
@@ -75,6 +77,13 @@ def normalize_model_usage(model_usage):
     return []
 
 
+def normalize_cost_value(raw_cost):
+    if raw_cost is None:
+        return Decimal("0")
+    value = raw_cost if isinstance(raw_cost, Decimal) else Decimal(str(raw_cost))
+    return value.quantize(JUNIE_COST_QUANTUM).normalize()
+
+
 def event_local_date(timestamp_ms):
     if timestamp_ms is None:
         return None
@@ -134,7 +143,7 @@ def collect_entries(target_date=None, session_ids=None, sessions_root=JUNIE_SESS
         with events_path.open() as f:
             for line in f:
                 try:
-                    record = json.loads(line)
+                    record = json.loads(line, parse_float=Decimal)
                 except json.JSONDecodeError:
                     continue
 
@@ -158,7 +167,7 @@ def collect_entries(target_date=None, session_ids=None, sessions_root=JUNIE_SESS
                             "task_name": session_info.get("taskName") or session_id,
                             "project_dir": session_info.get("projectDir") or "",
                             "model": usage.get("model") or "unknown",
-                            "cost": float(usage.get("cost") or 0.0),
+                            "cost": normalize_cost_value(usage.get("cost") or 0),
                             "in": int(usage.get("inputTokens") or 0),
                             "c_read": int(usage.get("cacheInputTokens") or 0),
                             "c_write": int(usage.get("cacheCreateTokens") or 0),
@@ -170,7 +179,7 @@ def collect_entries(target_date=None, session_ids=None, sessions_root=JUNIE_SESS
 
 
 def build_session_row():
-    return {"cost": 0.0, "calls": 0, "in": 0, "c_read": 0, "c_write": 0, "out": 0, "models": Counter()}
+    return {"cost": Decimal("0"), "calls": 0, "in": 0, "c_read": 0, "c_write": 0, "out": 0, "models": Counter()}
 
 
 def aggregate_entries(entries):
@@ -243,12 +252,12 @@ def print_summary(label, target_date, session_rows, session_index):
         if len(models) > 20:
             models = models[:17] + "..."
         print(
-            f"{task_name:<45} | {project_name:<18} | {models:<20} | {row['calls']:>5} | {row['in'] / 1e6:>8.2f} | {row['c_read'] / 1e6:>8.2f} | {row['c_write'] / 1e6:>8.2f} | {row['out'] / 1e6:>8.2f} | ${row['cost']:>8.2f}"
+            f"{task_name:<45} | {project_name:<18} | {models:<20} | {row['calls']:>5} | {row['in'] / 1e6:>8.2f} | {row['c_read'] / 1e6:>8.2f} | {row['c_write'] / 1e6:>8.2f} | {row['out'] / 1e6:>8.2f} | ${row['cost']:>10.6f}"
         )
 
     print("-" * 153)
     print(
-        f"{'TOTAL':<45} | {'':<18} | {'':<20} | {grand['calls']:>5} | {grand['in'] / 1e6:>8.2f} | {grand['c_read'] / 1e6:>8.2f} | {grand['c_write'] / 1e6:>8.2f} | {grand['out'] / 1e6:>8.2f} | ${grand['cost']:>8.2f}"
+        f"{'TOTAL':<45} | {'':<18} | {'':<20} | {grand['calls']:>5} | {grand['in'] / 1e6:>8.2f} | {grand['c_read'] / 1e6:>8.2f} | {grand['c_write'] / 1e6:>8.2f} | {grand['out'] / 1e6:>8.2f} | ${grand['cost']:>10.6f}"
     )
     print("=" * 153 + "\n")
 

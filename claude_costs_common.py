@@ -3,10 +3,11 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from decimal import Decimal
 from datetime import date, datetime
 from pathlib import Path
 
-from openrouter_pricing import calculate_estimated_cost, match_openrouter_model
+from pricing_catalog import calculate_estimated_cost, match_pricing_model
 
 
 def parse_args(default_strategy_name):
@@ -37,7 +38,7 @@ def zero_usage():
 
 
 def get_model_label(model_name, snapshot=None):
-    entry = match_openrouter_model(model_name, snapshot=snapshot)
+    entry = match_pricing_model(model_name, catalog=snapshot)
     if not entry:
         return model_name or "unknown"
     return entry.get("display_name") or entry.get("canonical_slug") or entry["id"]
@@ -184,13 +185,13 @@ def calculate_cost(usage, model_name, snapshot=None):
         cache_read_tokens=usage["c_read"],
         cache_write_5m_tokens=usage["c_write_5m"],
         cache_write_1h_tokens=usage["c_write_1h"],
-        snapshot=snapshot,
+        catalog=snapshot,
     )
-    return cost or 0.0
+    return cost or Decimal("0")
 
 
 def build_session_row():
-    return {"in": 0, "out": 0, "c_read": 0, "c_write_5m": 0, "c_write_1h": 0, "cost": 0.0, "model": "unknown"}
+    return {"in": 0, "out": 0, "c_read": 0, "c_write_5m": 0, "c_write_1h": 0, "cost": Decimal("0"), "model": "unknown"}
 
 
 def add_session_usage(row, usage, model_name, snapshot=None):
@@ -228,12 +229,12 @@ def print_summary(strategy_name, target_date, session_rows, sid_display_names):
         if len(name) > 43:
             name = name[:40] + "..."
         print(
-            f"{name:<45} | {row['model']:<12} | {row['in'] / 1e6:>8.2f} | {row['out'] / 1e6:>8.2f} | {row['c_read'] / 1e6:>8.2f} | {row['c_write_5m'] / 1e6:>8.2f} | {row['c_write_1h'] / 1e6:>8.2f} | ${row['cost']:>8.2f}"
+            f"{name:<45} | {row['model']:<12} | {row['in'] / 1e6:>8.2f} | {row['out'] / 1e6:>8.2f} | {row['c_read'] / 1e6:>8.2f} | {row['c_write_5m'] / 1e6:>8.2f} | {row['c_write_1h'] / 1e6:>8.2f} | ${row['cost']:>10.6f}"
         )
 
     print("-" * 145)
     print(
-        f"{'TOTAL':<45} | {'':<12} | {grand['in'] / 1e6:>8.2f} | {grand['out'] / 1e6:>8.2f} | {grand['c_read'] / 1e6:>8.2f} | {grand['c_write_5m'] / 1e6:>8.2f} | {grand['c_write_1h'] / 1e6:>8.2f} | ${grand['cost']:>8.2f}"
+        f"{'TOTAL':<45} | {'':<12} | {grand['in'] / 1e6:>8.2f} | {grand['out'] / 1e6:>8.2f} | {grand['c_read'] / 1e6:>8.2f} | {grand['c_write_5m'] / 1e6:>8.2f} | {grand['c_write_1h'] / 1e6:>8.2f} | ${grand['cost']:>10.6f}"
     )
     print("=" * 145 + "\n")
 

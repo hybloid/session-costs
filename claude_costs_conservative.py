@@ -11,12 +11,12 @@ from claude_costs_common import (
     resolve_target_date,
     zero_usage,
 )
-from openrouter_pricing import resolve_catalog
+from pricing_catalog import get_pricing_catalog
 
 
 def aggregate_message_max(entries):
     session_rows = defaultdict(build_session_row)
-    snapshot = resolve_catalog()
+    snapshot = get_pricing_catalog()
 
     for (sid, _mid), message_entries in group_entries_by_message(entries).items():
         message_usage = zero_usage()

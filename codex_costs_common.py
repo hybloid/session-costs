@@ -3,10 +3,11 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from decimal import Decimal
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from openrouter_pricing import calculate_estimated_cost, match_openrouter_model
+from pricing_catalog import calculate_estimated_cost, match_pricing_model
 
 CODEX_HISTORY_PATH = Path("~/.codex/history.jsonl").expanduser()
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
@@ -42,7 +43,7 @@ def zero_usage():
 def build_session_row():
     return {
         "usage": zero_usage(),
-        "cost": 0.0,
+        "cost": Decimal("0"),
         "models": defaultdict(zero_usage),
         "reasoning": 0,
     }
@@ -159,7 +160,7 @@ def get_display_names():
 
 
 def get_model_label(model_name, snapshot=None):
-    entry = match_openrouter_model(model_name, snapshot=snapshot)
+    entry = match_pricing_model(model_name, catalog=snapshot)
     if not entry:
         return model_name or "unknown"
     return entry.get("display_name") or entry.get("canonical_slug") or entry["id"]
@@ -406,10 +407,10 @@ def add_session_usage(session_row, usage, model_name, snapshot=None):
         input_tokens=usage["in"],
         output_tokens=usage["out"],
         cache_read_tokens=usage["c_read"],
-        snapshot=snapshot,
+        catalog=snapshot,
     )
 
-    session_row["cost"] += cost or 0.0
+    session_row["cost"] += cost or Decimal("0")
 
     model_usage = session_row["models"][get_model_label(model_name, snapshot=snapshot)]
     model_usage["in"] += usage["in"]
@@ -440,7 +441,7 @@ def format_models(model_usage_map):
 
 def print_summary(label, target_date, session_rows, display_names):
     rows = []
-    total_cost = 0.0
+    total_cost = Decimal("0")
     total_in = 0
     total_cached = 0
     total_out = 0
@@ -485,7 +486,7 @@ def print_summary(label, target_date, session_rows, display_names):
             f"{row['cached_m']:>10.3f}  "
             f"{row['out_m']:>10.3f}  "
             f"{row['reasoning_m']:>10.3f}  "
-            f"{row['cost']:>10.4f}"
+            f"{row['cost']:>10.6f}"
         )
 
     print("-" * (dialogue_width + model_width + 68))
@@ -495,5 +496,5 @@ def print_summary(label, target_date, session_rows, display_names):
         f"{total_cached / 1_000_000:>10.3f}  "
         f"{total_out / 1_000_000:>10.3f}  "
         f"{total_reasoning / 1_000_000:>10.3f}  "
-        f"{total_cost:>10.4f}"
+        f"{total_cost:>10.6f}"
     )

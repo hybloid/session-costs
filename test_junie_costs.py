@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from datetime import date
 from pathlib import Path
 from unittest import mock
@@ -70,7 +71,7 @@ class JunieCostsTest(unittest.TestCase):
 
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]["session_id"], "session-a")
-            self.assertEqual(entries[0]["cost"], 1.25)
+            self.assertEqual(entries[0]["cost"], Decimal("1.25"))
             self.assertEqual(session_index["session-a"]["taskName"], "Task A")
 
     def test_collect_entries_accepts_all_time_and_multiple_model_usage_items(self):
@@ -102,7 +103,7 @@ class JunieCostsTest(unittest.TestCase):
             entries, _ = j.collect_entries(target_date=None, sessions_root=sessions_root, index_path=index_path)
 
             self.assertEqual(len(entries), 2)
-            self.assertEqual(sum(entry["cost"] for entry in entries), 1.5)
+            self.assertEqual(sum(entry["cost"] for entry in entries), Decimal("1.5"))
             self.assertEqual(sum(entry["c_read"] for entry in entries), 10)
             self.assertEqual(sum(entry["c_write"] for entry in entries), 5)
 
@@ -112,7 +113,7 @@ class JunieCostsTest(unittest.TestCase):
                 {
                     "session_id": "session-a",
                     "model": "gpt-5.4",
-                    "cost": 1.0,
+                    "cost": Decimal("1.0"),
                     "in": 100,
                     "c_read": 10,
                     "c_write": 5,
@@ -121,7 +122,7 @@ class JunieCostsTest(unittest.TestCase):
                 {
                     "session_id": "session-a",
                     "model": "gpt-4.1-mini",
-                    "cost": 0.5,
+                    "cost": Decimal("0.5"),
                     "in": 40,
                     "c_read": 0,
                     "c_write": 0,
@@ -131,7 +132,7 @@ class JunieCostsTest(unittest.TestCase):
         )
 
         row = session_rows["session-a"]
-        self.assertEqual(row["cost"], 1.5)
+        self.assertEqual(row["cost"], Decimal("1.5"))
         self.assertEqual(row["calls"], 2)
         self.assertEqual(row["in"], 140)
         self.assertEqual(row["c_read"], 10)

@@ -1,12 +1,13 @@
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from datetime import date
 from pathlib import Path
 from unittest import mock
 
 import codex_costs_common as c
-import openrouter_pricing as p
+import pricing_catalog as p
 import codex_costs_conservative as conservative
 
 
@@ -132,7 +133,7 @@ class CodexCostsCommonTest(unittest.TestCase):
 
         snapshot = {
             "entries": [
-                p.create_entry(
+                p.create_catalog_entry(
                     {
                         "id": "openai/gpt-5.4",
                         "canonical_slug": "openai/gpt-5.4-20260305",
@@ -143,7 +144,7 @@ class CodexCostsCommonTest(unittest.TestCase):
                         "cache_write_token_price_usd": None,
                     }
                 ),
-                p.create_entry(
+                p.create_catalog_entry(
                     {
                         "id": "openai/gpt-5-mini",
                         "canonical_slug": "openai/gpt-5-mini-2025-08-07",
@@ -157,20 +158,13 @@ class CodexCostsCommonTest(unittest.TestCase):
             ]
         }
 
-        with mock.patch.object(conservative, "resolve_catalog", return_value=snapshot):
+        with mock.patch.object(conservative, "get_pricing_catalog", return_value=snapshot):
             session_rows = conservative.aggregate_snapshot_max(entries)
         usage = session_rows["root-session"]["usage"]
         self.assertEqual(usage, {"in": 130, "out": 55, "c_read": 34, "reasoning": 14})
 
-        expected_cost = (
-            120 * 0.0000025
-            + 50 * 0.000015
-            + 30 * 0.00000025
-            + 10 * 0.00000025
-            + 5 * 0.000002
-            + 4 * 0.000000025
-        )
-        self.assertAlmostEqual(session_rows["root-session"]["cost"], expected_cost)
+        expected_cost = Decimal("0.0010701")
+        self.assertEqual(session_rows["root-session"]["cost"], expected_cost)
         self.assertEqual(set(session_rows["root-session"]["models"].keys()), {"OpenAI: GPT-5.4", "OpenAI: GPT-5 Mini"})
 
     def test_collect_entries_filters_by_local_date(self):

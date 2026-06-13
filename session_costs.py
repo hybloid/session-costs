@@ -4,6 +4,7 @@ import subprocess
 import json
 import re
 import shutil
+from decimal import Decimal
 from functools import lru_cache
 from datetime import date, datetime, timedelta
 from html import escape
@@ -20,6 +21,7 @@ from junie_costs import short_project_name
 
 CLAUDE_HISTORY_PATH = Path("~/.claude/history.jsonl").expanduser()
 WORKING_COPY_SUFFIX_RE = re.compile(r"^(?P<repo>.+)-(?P<copy>\d+)$")
+ZERO_USD = Decimal("0")
 
 
 def parse_args():
@@ -85,7 +87,7 @@ def source_totals_template():
         "cache_write_1h_tokens": 0,
         "output_tokens": 0,
         "reasoning_tokens": 0,
-        "cost_usd": 0.0,
+        "cost_usd": ZERO_USD,
     }
 
 
@@ -94,7 +96,10 @@ TOTAL_KEYS = tuple(source_totals_template().keys())
 
 def add_totals(target, values):
     for key in TOTAL_KEYS:
-        target[key] += values.get(key, 0) or 0
+        if key == "cost_usd":
+            target[key] += values.get(key, ZERO_USD) or ZERO_USD
+        else:
+            target[key] += values.get(key, 0) or 0
 
 
 def load_claude_session_projects():
@@ -676,7 +681,7 @@ def build_report(scope, anchor_date, detailed=False):
 
 def format_value(kind, value):
     if kind == "usd":
-        return f"${value:.4f}"
+        return f"${value:.6f}"
     if kind == "mt":
         return f"{value / 1_000_000:.3f}"
     if kind == "int":
@@ -997,7 +1002,16 @@ def render_html(report, summary_only=False):
 
 
 def make_json_ready(report):
-    json_report = json.loads(json.dumps(report))
+    def convert(value):
+        if isinstance(value, Decimal):
+            return format(value, "f")
+        if isinstance(value, dict):
+            return {key: convert(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        return value
+
+    json_report = convert(report)
     for source_report in json_report["sources"]:
         source_report.pop("columns", None)
     json_report.pop("detailed_columns", None)

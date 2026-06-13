@@ -11,12 +11,12 @@ from codex_costs_common import (
     resolve_target_date,
     zero_usage,
 )
-from openrouter_pricing import resolve_catalog
+from pricing_catalog import get_pricing_catalog
 
 
 def aggregate_snapshot_max(entries):
     session_rows = defaultdict(build_session_row)
-    snapshot = resolve_catalog()
+    snapshot = get_pricing_catalog()
 
     leaf_totals = {}
     for entry in entries:

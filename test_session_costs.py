@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 from contextlib import redirect_stdout
+from decimal import Decimal
 from datetime import date
 from pathlib import Path
 
@@ -34,7 +35,7 @@ class SessionCostsTest(unittest.TestCase):
                     "label": "Claude",
                     "columns": [("name", "Name", "text")],
                     "rows": [{"name": "A"}],
-                    "totals": {"cost_usd": 1.0},
+                    "totals": {"cost_usd": Decimal("1.0")},
                 }
             ],
         }
@@ -43,27 +44,28 @@ class SessionCostsTest(unittest.TestCase):
         self.assertNotIn("columns", json_ready["sources"][0])
         self.assertNotIn("detailed_columns", json_ready)
         self.assertEqual(json_ready["sources"][0]["rows"][0]["name"], "A")
+        self.assertEqual(json_ready["sources"][0]["totals"]["cost_usd"], "1.0")
 
     def test_render_html_includes_summary_and_source_table(self):
         report = {
             "scope": {"mode": "today", "start_date": "2026-06-13", "end_date": "2026-06-13"},
-            "summary": [{"source": "Claude", "sessions": 2, "calls": 0, "cost_usd": 12.5}],
-            "grand_total": {"sessions": 2, "calls": 0, "cost_usd": 12.5},
+            "summary": [{"source": "Claude", "sessions": 2, "calls": 0, "cost_usd": Decimal("12.5")}],
+            "grand_total": {"sessions": 2, "calls": 0, "cost_usd": Decimal("12.5")},
             "groups": [
                 {
                     "origin": "git@github.com:test/repo",
-                    "totals": {"cost_usd": 12.5},
+                    "totals": {"cost_usd": Decimal("12.5")},
                     "branches": [
                         {
                             "branch": "main",
-                            "totals": {"cost_usd": 12.5},
+                            "totals": {"cost_usd": Decimal("12.5")},
                             "locations": [
                                 {
                                     "repository": "repo",
                                     "working_copy": "",
                                     "branch": "main",
-                                    "totals": {"cost_usd": 12.5},
-                                    "rows": [{"name": "Test Dialogue", "agent": "Claude", "cost_usd": 12.5}],
+                                    "totals": {"cost_usd": Decimal("12.5")},
+                                    "rows": [{"name": "Test Dialogue", "agent": "Claude", "cost_usd": Decimal("12.5")}],
                                 }
                             ],
                         }
@@ -82,8 +84,8 @@ class SessionCostsTest(unittest.TestCase):
                         ("name", "Dialogue", "text"),
                         ("cost_usd", "Cost", "usd"),
                     ],
-                    "rows": [{"name": "Test Dialogue", "cost_usd": 12.5}],
-                    "totals": {"cost_usd": 12.5},
+                    "rows": [{"name": "Test Dialogue", "cost_usd": Decimal("12.5")}],
+                    "totals": {"cost_usd": Decimal("12.5")},
                 }
             ],
         }
@@ -93,14 +95,14 @@ class SessionCostsTest(unittest.TestCase):
         self.assertIn(">Summary</h2>", html)
         self.assertIn("Detailed sessions", html)
         self.assertIn("Test Dialogue", html)
-        self.assertIn("$12.5000", html)
+        self.assertIn("$12.500000", html)
 
     def test_render_text_table_truncates_long_text_columns(self):
         rows = [
             {
                 "name": "This is a very long dialogue title that should not stretch the full terminal table across the screen",
                 "models": "claude-opus-4.8-super-long-model-name",
-                "cost_usd": 12.5,
+                "cost_usd": Decimal("12.5"),
             }
         ]
 
@@ -114,13 +116,13 @@ class SessionCostsTest(unittest.TestCase):
                     ("cost_usd", "Cost", "usd"),
                 ],
                 rows,
-                {"cost_usd": 12.5},
+                {"cost_usd": Decimal("12.5")},
             )
 
         rendered = buffer.getvalue()
         self.assertIn("…", rendered)
-        self.assertIn("$12.5000", rendered)
-        data_line = next(line for line in rendered.splitlines() if "$12.5000" in line and "TOTAL" not in line)
+        self.assertIn("$12.500000", rendered)
+        data_line = next(line for line in rendered.splitlines() if "$12.500000" in line and "TOTAL" not in line)
         self.assertLessEqual(len(data_line), 80)
 
     def test_render_text_table_collapses_multiline_dialogue_names(self):
@@ -128,7 +130,7 @@ class SessionCostsTest(unittest.TestCase):
             {
                 "name": "1) скачай исходники zed\n2) найди описание утилиты\n3) проверь запуск",
                 "models": "haiku",
-                "cost_usd": 73.8218,
+                "cost_usd": Decimal("73.8218"),
             }
         ]
 
@@ -142,14 +144,14 @@ class SessionCostsTest(unittest.TestCase):
                     ("cost_usd", "Cost", "usd"),
                 ],
                 rows,
-                {"cost_usd": 73.8218},
+                {"cost_usd": Decimal("73.8218")},
             )
 
         rendered = buffer.getvalue()
         self.assertNotIn("\n2) найди описание утилиты", rendered)
         self.assertIn("1) скачай исходники zed 2) найди описание утили", rendered)
         self.assertIn("…", rendered)
-        data_line = next(line for line in rendered.splitlines() if "$73.8218" in line and "TOTAL" not in line)
+        data_line = next(line for line in rendered.splitlines() if "$73.821800" in line and "TOTAL" not in line)
         self.assertEqual(data_line.count("|"), 2)
 
     def test_render_text_table_uses_terminal_width_consistently(self):
@@ -158,7 +160,7 @@ class SessionCostsTest(unittest.TestCase):
                 "name": "A very long dialogue title that should stretch to the available terminal width cleanly",
                 "agent": "Claude",
                 "models": "opus-4.8",
-                "cost_usd": 12.5,
+                "cost_usd": Decimal("12.5"),
             }
         ]
 
@@ -173,7 +175,7 @@ class SessionCostsTest(unittest.TestCase):
                     ("cost_usd", "Cost", "usd"),
                 ],
                 rows,
-                {"cost_usd": 12.5},
+                {"cost_usd": Decimal("12.5")},
                 indent="    ",
             )
 
@@ -222,7 +224,7 @@ class SessionCostsTest(unittest.TestCase):
                 "cache_write_1h_tokens": 0,
                 "output_tokens": 5,
                 "reasoning_tokens": 0,
-                "cost_usd": 1.0,
+                "cost_usd": Decimal("1.0"),
             },
             {
                 "name": "B",
@@ -238,29 +240,29 @@ class SessionCostsTest(unittest.TestCase):
                 "cache_write_1h_tokens": 0,
                 "output_tokens": 15,
                 "reasoning_tokens": 0,
-                "cost_usd": 2.5,
+                "cost_usd": Decimal("2.5"),
             },
         ]
 
         groups = s.build_source_groups(rows)
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0]["origin"], "git@github.com:acme/public-tools")
-        self.assertEqual(groups[0]["totals"]["cost_usd"], 3.5)
+        self.assertEqual(groups[0]["totals"]["cost_usd"], Decimal("3.5"))
         self.assertEqual(len(groups[0]["branches"]), 2)
         self.assertEqual(groups[0]["branches"][0]["branch"], "sunny-branch")
-        self.assertEqual(groups[0]["branches"][0]["totals"]["cost_usd"], 2.5)
+        self.assertEqual(groups[0]["branches"][0]["totals"]["cost_usd"], Decimal("2.5"))
         self.assertEqual(groups[0]["branches"][0]["locations"][0]["working_copy"], "sunny-branch")
         self.assertEqual(groups[0]["branches"][1]["branch"], "")
         self.assertEqual(groups[0]["branches"][1]["locations"][0]["repository"], "public-tools")
 
     def test_with_optional_agent_column_adds_field_without_grouping(self):
         columns = [("name", "Dialogue", "text"), ("cost_usd", "Cost", "usd")]
-        rows = [{"name": "A", "agent": "subagent", "cost_usd": 1.0}]
+        rows = [{"name": "A", "agent": "subagent", "cost_usd": Decimal("1.0")}]
 
         with_agent = s.with_optional_agent_column(columns, rows)
         self.assertEqual(with_agent[1], ("agent", "Agent", "text"))
 
-        without_agent = s.with_optional_agent_column(columns, [{"name": "A", "agent": "", "cost_usd": 1.0}])
+        without_agent = s.with_optional_agent_column(columns, [{"name": "A", "agent": "", "cost_usd": Decimal("1.0")}])
         self.assertEqual(without_agent, columns)
 
     def test_collect_codex_report_prefers_internal_display_and_shows_agent_column(self):
@@ -280,7 +282,7 @@ class SessionCostsTest(unittest.TestCase):
             "root-1": {
                 "usage": {"in": 10, "out": 5, "c_read": 2, "reasoning": 1},
                 "models": {"gpt-5.5": {}},
-                "cost": 12.34,
+                "cost": Decimal("12.34"),
             }
         }
 
@@ -307,7 +309,7 @@ class SessionCostsTest(unittest.TestCase):
                 "c_write_5m": 10,
                 "c_write_1h": 0,
                 "out": 25,
-                "cost": 1.5,
+                "cost": Decimal("1.5"),
             }
         }
 
@@ -323,23 +325,23 @@ class SessionCostsTest(unittest.TestCase):
     def test_render_console_uses_indentation_for_grouped_sections(self):
         report = {
             "scope": {"mode": "today", "start_date": "2026-06-13", "end_date": "2026-06-13"},
-            "summary": [{"source": "Codex", "sessions": 1, "calls": 0, "cost_usd": 12.5}],
-            "grand_total": {"sessions": 1, "calls": 0, "cost_usd": 12.5},
+            "summary": [{"source": "Codex", "sessions": 1, "calls": 0, "cost_usd": Decimal("12.5")}],
+            "grand_total": {"sessions": 1, "calls": 0, "cost_usd": Decimal("12.5")},
             "groups": [
                 {
                     "origin": "git@github.com:acme/sample-repo",
-                    "totals": {"cost_usd": 12.5},
+                    "totals": {"cost_usd": Decimal("12.5")},
                     "branches": [
                         {
                             "branch": "main",
-                            "totals": {"cost_usd": 12.5},
+                            "totals": {"cost_usd": Decimal("12.5")},
                             "locations": [
                                 {
                                     "repository": "sample-repo",
                                     "working_copy": "",
                                     "branch": "main",
-                                    "totals": {"cost_usd": 12.5},
-                                    "rows": [{"name": "Task", "agent": "Codex", "cost_usd": 12.5}],
+                                    "totals": {"cost_usd": Decimal("12.5")},
+                                    "rows": [{"name": "Task", "agent": "Codex", "cost_usd": Decimal("12.5")}],
                                 }
                             ],
                         }
@@ -351,23 +353,23 @@ class SessionCostsTest(unittest.TestCase):
                 {
                     "label": "Codex",
                     "columns": [("name", "Dialogue", "text"), ("agent", "Agent", "text"), ("cost_usd", "Cost", "usd")],
-                    "rows": [{"name": "Task", "agent": "Codex", "cost_usd": 12.5}],
-                    "totals": {"cost_usd": 12.5},
+                    "rows": [{"name": "Task", "agent": "Codex", "cost_usd": Decimal("12.5")}],
+                    "totals": {"cost_usd": Decimal("12.5")},
                     "groups": [
                         {
                             "origin": "git@github.com:acme/sample-repo",
-                            "totals": {"cost_usd": 12.5},
+                            "totals": {"cost_usd": Decimal("12.5")},
                             "branches": [
                                 {
                                     "branch": "main",
-                                    "totals": {"cost_usd": 12.5},
+                                    "totals": {"cost_usd": Decimal("12.5")},
                                     "locations": [
                                         {
                                             "repository": "sample-repo",
                                             "working_copy": "",
                                             "branch": "main",
-                                            "totals": {"cost_usd": 12.5},
-                                            "rows": [{"name": "Task", "agent": "Codex", "cost_usd": 12.5}],
+                                            "totals": {"cost_usd": Decimal("12.5")},
+                                            "rows": [{"name": "Task", "agent": "Codex", "cost_usd": Decimal("12.5")}],
                                         }
                                     ],
                                 }
@@ -394,24 +396,24 @@ class SessionCostsTest(unittest.TestCase):
             "label": "Claude",
             "columns": [("name", "Dialogue", "text")],
             "groups": [],
-            "rows": [{"name": "Claude task", "agent": "Claude", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": 5.0}],
-            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": 5.0},
+            "rows": [{"name": "Claude task", "agent": "Claude", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": Decimal("5.0")}],
+            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": Decimal("5.0")},
         }
         codex_report = {
             "source": "codex",
             "label": "Codex",
             "columns": [("name", "Dialogue", "text")],
             "groups": [],
-            "rows": [{"name": "Codex task", "agent": "Codex", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": 7.0}],
-            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": 7.0},
+            "rows": [{"name": "Codex task", "agent": "Codex", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": Decimal("7.0")}],
+            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": Decimal("7.0")},
         }
         junie_report = {
             "source": "junie",
             "label": "Junie",
             "columns": [("name", "Task", "text")],
             "groups": [],
-            "rows": [{"name": "Junie task", "agent": "Junie", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": 2.0}],
-            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": 2.0},
+            "rows": [{"name": "Junie task", "agent": "Junie", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": Decimal("2.0")}],
+            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": Decimal("2.0")},
         }
 
         with mock.patch.object(s, "collect_claude_report", return_value=claude_report), \
@@ -430,8 +432,8 @@ class SessionCostsTest(unittest.TestCase):
             "label": "Claude",
             "columns": [("name", "Dialogue", "text")],
             "groups": [],
-            "rows": [{"name": "Claude task", "agent": "Claude", "models": "opus", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": 5.0}],
-            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": 5.0},
+            "rows": [{"name": "Claude task", "agent": "Claude", "models": "opus", "repository": "repo", "working_copy": "", "branch": "main", "origin": "origin/repo", "cost_usd": Decimal("5.0")}],
+            "totals": {**s.source_totals_template(), "sessions": 1, "cost_usd": Decimal("5.0")},
         }
 
         with mock.patch.object(s, "collect_claude_report", return_value=claude_report), \
@@ -445,14 +447,14 @@ class SessionCostsTest(unittest.TestCase):
         fake_report = {
             "generated_at": "2026-06-13T15:00:00+03:00",
             "scope": {"mode": "today", "start_date": "2026-06-13", "end_date": "2026-06-13"},
-            "summary": [{"source": "Claude", "sessions": 1, "calls": 0, "cost_usd": 1.25}],
-            "grand_total": {"sessions": 1, "calls": 0, "cost_usd": 1.25},
+            "summary": [{"source": "Claude", "sessions": 1, "calls": 0, "cost_usd": Decimal("1.25")}],
+            "grand_total": {"sessions": 1, "calls": 0, "cost_usd": Decimal("1.25")},
             "sources": [
                 {
                     "label": "Claude",
                     "columns": [("name", "Dialogue", "text")],
                     "rows": [{"name": "Dialog"}],
-                    "totals": {"cost_usd": 1.25},
+                    "totals": {"cost_usd": Decimal("1.25")},
                 }
             ],
         }
